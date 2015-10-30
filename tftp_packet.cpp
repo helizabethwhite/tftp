@@ -3,9 +3,7 @@
 using namespace std;
 
 TFTP_Packet::TFTP_Packet()	{
-
 	clear();
-
 }
 
 
@@ -13,18 +11,15 @@ TFTP_Packet::~TFTP_Packet() {
 }
 
 void TFTP_Packet::clear()	{
-
-	current_packet_size = 0;
 	
+    current_packet_size = 0;
     // Put "current_packet_size" at the beginning of the block of memory
     // occupied by data
 	memset(data, current_packet_size, TFTP_PACKET_MAX_SIZE);
-
 }
 
 unsigned char* TFTP_Packet::getData(int offset) {
 	return &(data[offset]);
-
 }
 
 /*
@@ -32,7 +27,6 @@ unsigned char* TFTP_Packet::getData(int offset) {
  */
 word TFTP_Packet::getOPCode() {
 	return (this->GetWord(0));
-    
 }
 
 /*
@@ -51,10 +45,8 @@ bool TFTP_Packet::copyData(int offset, char* dest, int length) {
     {
         return false;
     }
-
 	memcpy(dest, &(data[offset]), (this->getSize()-offset));
 	return true;
-
 }
 
 
@@ -71,7 +63,6 @@ bool TFTP_Packet::addByte(BYTE b) {
 	if (current_packet_size >= TFTP_PACKET_MAX_SIZE) {
 		return false;
 	}
-
     // Add new byte to the packet we are assembling
 	data[current_packet_size] = (unsigned char)b;
 	current_packet_size++;
@@ -88,7 +79,6 @@ bool TFTP_Packet::addWord(word w) {
     {
         return false;
     }
-
     // add second
 	return (!addByte(*((byte*)&w)));
 }
