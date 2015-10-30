@@ -35,7 +35,7 @@ word TFTP_Packet::getOPCode() {
 bool TFTP_Packet::copyData(int offset, char* dest, int length) {
     // Make sure we are not attempting to place data
     // outside of the memory we have allocated
-	if (offset > this->getSize())
+    if (offset > this->getSize())
     {
         return false;
     }
@@ -101,7 +101,8 @@ bool TFTP_Packet::addString(char* str) {
  */
 bool TFTP_Packet::addMemory(char* buffer, int len) {
 
-	if (current_packet_size + len >= TFTP_PACKET_SIZE)	{
+	if (current_packet_size + len >= TFTP_PACKET_SIZE)
+    {
 		cout << "Error: maximum size already reached.\n";
 		return false;
 	}
@@ -121,7 +122,6 @@ byte TFTP_Packet::getByte(int offset) {
  * Return the word located at the specified offset
  */
 word TFTP_Packet::getWord(int offset) {
-
     // Get first half of the word
 	word hi = getByte(offset);
     // Get second half of the word

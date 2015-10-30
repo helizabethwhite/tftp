@@ -9,9 +9,9 @@ typedef unsigned short word;
 
 #define TFTP_PACKET_SIZE 512
 
-//"netascii", "octet", or "mail" are all
-// possibilities, but for this spec we will use octet mode
-#define TFTP_DEFAULT_TRANSFER_MODE "octet"
+// a couple of different possibilities,
+// but for this spec we will use octet mode
+#define TFTP_TRANSFER_MODE "octet"
 
 // This class defines a TFTP packet.
 // A TFTP packet can be one of 5 types as dictated by the above opcodes.
