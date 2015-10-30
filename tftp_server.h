@@ -13,5 +13,5 @@ class TFTP_Server {
     int serverPort;
     
     bool sendPacket(TFTP_Packet* packet, TFTP_Client* client);
-    bool receivePacket(TFTP_Packet* packet, ServerClient* client);
+    bool receivePacket(TFTP_Packet* packet, TFTP_Client* client);
 };
