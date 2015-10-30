@@ -1,3 +1,5 @@
+#include <iostream>
+
 typedef unsigned char byte;
 typedef unsigned short word;
 
@@ -28,32 +30,25 @@ class TFTP_Packet {
 		~TFTP_Packet();
     
 		void clear();
-
 		int getSize();
-
-		bool addByte(byte b);
-		bool addWord(word w);
+    
+        word getOPCode();
+        word getPacketNumber();
+    
+        byte getByte(int offset);
+        word getWord(int offset);
+        bool getString(int offset, char* buffer, int length);       // can be used for getting filename, mode, or error msg
+    
+		bool addByte(byte b);                       // function used to expand packet (most likely data)
+		bool addWord(word w);                       // function used to expand packet (most likely data)
 		bool addString(char* str);
-		bool addMemory(char* buffer, int len);
 		
-		byte getByte(int offset);
-		word getWord(int offset = 0);
-		bool getString(int offset, char* buffer, int length);
-		word getNumber();
-		unsigned char* getData(int offset = 0);
+		unsigned char* getData(int offset);
     
 		bool copyData(int offset, char* dest, int length);
-        bool sendPacket(TFTP_Packet*);
 
-		bool createRRQ(char* filename);
 		bool createWRQ(char* filename);
 		bool createACK(int packet_num);
 		bool createData(int block, char* data, int data_size);
 		bool createError(int error_code, char* message);
-    
-		bool isWRQ();
-		bool isACK();
-		bool isData();
-		bool isError();
-
 };

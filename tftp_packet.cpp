@@ -97,21 +97,6 @@ bool TFTP_Packet::addString(char* str) {
 }
 
 /*
- * Increase the size of our packet (for data transmission)
- */
-bool TFTP_Packet::addMemory(char* buffer, int len) {
-
-	if (current_packet_size + len >= TFTP_PACKET_SIZE)
-    {
-		cout << "Error: maximum size already reached.\n";
-		return false;
-	}
-	memcpy(&(data[current_packet_size]), buffer, len);
-	current_packet_size += len;
-	return true;
-}
-
-/*
  * Return the byte located at the specified offset
  */
 byte TFTP_Packet::getByte(int offset) {
@@ -131,7 +116,7 @@ word TFTP_Packet::getWord(int offset) {
 }
 
 
-word TFTP_Packet::getNumber() {
+word TFTP_Packet::getPacketNumber() {
 	if (this->isData() || this->isACK())
     {
 		return this->getWord(2);
@@ -197,10 +182,12 @@ bool TFTP_Packet::createData(int block, char* data, int data_size) {
 }
 
 /*
- * Create an error packet. For example, maybe the file
+ * Create an error packet. 
+ *
+ * Example error situation: maybe the file
  * being Put to the server already exists. Somewhere, I
  * will need to define error codes to correspond with
- * common errors that might arise.
+ * errors that might arise.
  */
 bool TFTP_Packet::createError(int error_code, char* message) {
 	clear();
@@ -209,31 +196,4 @@ bool TFTP_Packet::createError(int error_code, char* message) {
 	addString(message);
 	addByte(0);
 	return true;
-
-}
-
-/*
- * Get the current size of the packet
- */
-int TFTP_Packet::getSize() {
-	return current_packet_size;
-}
-
-/*
- * ~Helper functions~
- */
-bool TFTP_Packet::isWRQ() {
-	return (this->getOPCode == OPCODE_WRITE);
-}
-
-bool TFTP_Packet::isACK() {
-	return (this->getOPCode == OPCODE_ACK);
-}
-
-bool TFTP_Packet::isData() {
-	return (this->getOPCode == OPCODE_DATA);
-}
-
-bool TFTP_Packet::isError() {
-	return (this->getOPCode == OPCODE_ERROR);
 }
