@@ -23,7 +23,6 @@ void TFTP_Packet::clear()	{
 }
 
 unsigned char* TFTP_Packet::getData(int offset) {
-
 	return &(data[offset]);
 
 }
@@ -32,7 +31,6 @@ unsigned char* TFTP_Packet::getData(int offset) {
  * Return what type of packet we are handling
  */
 word TFTP_Packet::getOPCode() {
-    
 	return (this->GetWord(0));
     
 }
@@ -55,7 +53,6 @@ bool TFTP_Packet::copyData(int offset, char* dest, int length) {
     }
 
 	memcpy(dest, &(data[offset]), (this->getSize()-offset));
-
 	return true;
 
 }
@@ -78,9 +75,7 @@ bool TFTP_Packet::addByte(BYTE b) {
     // Add new byte to the packet we are assembling
 	data[current_packet_size] = (unsigned char)b;
 	current_packet_size++;
-
 	return true;
-
 }
 
 /* Add data to the packet in larger amounts
@@ -96,7 +91,6 @@ bool TFTP_Packet::addWord(word w) {
 
     // add second
 	return (!addByte(*((byte*)&w)));
-
 }
 
 /*
@@ -105,19 +99,12 @@ bool TFTP_Packet::addWord(word w) {
 bool TFTP_Packet::addString(char* str) {
 
 	int n = strlen(str);
-
 	for (int i=0; i < n; i++) {
-
-		if (!addByte(*(str + i))) { 
-
+		if (!addByte(*(str + i))) {
 			return false;
-
 		}
-
 	}
-
 	return true;
-
 }
 
 /*
@@ -132,18 +119,14 @@ bool TFTP_Packet::addMemory(char* buffer, int len) {
 
 	memcpy(&(data[current_packet_size]), buffer, len);
 	current_packet_size += len;
-
 	return true;
-
 }
 
 /*
  * Return the byte located at the specified offset
  */
 byte TFTP_Packet::getByte(int offset) {
-
 	return (byte)data[offset];
-
 }
 
 /*
@@ -155,10 +138,8 @@ word TFTP_Packet::getWord(int offset) {
 	word hi = getByte(offset);
     // Get second half of the word
 	word lo = getByte(offset + 1);
-
     // Concatenate the two bytes to form the resulting word
 	return ((hi<<8)|lo);
-
 }
 
 
@@ -171,7 +152,6 @@ word TFTP_Packet::getNumber() {
     else {
 		return 0;
 	}
-
 }
 
 bool TFTP_Packet::getString(int offset, char* buffer, int len) {
@@ -186,9 +166,7 @@ bool TFTP_Packet::getString(int offset, char* buffer, int len) {
     }
 
 	memcpy(buffer, &(data[offset]), current_packet_size - offset);
-
 	return true;
-
 }
 
 /*
@@ -206,9 +184,7 @@ bool TFTP_Packet::createWRQ(char* filename) {
 	addByte(0);
 	addString(TFTP_DEFAULT_TRANSFER_MODE);
 	addByte(0);
-
 	return true;
-
 }
 
 /*
@@ -219,41 +195,25 @@ bool TFTP_Packet::createACK(int packet_num) {
 	clear();
 	addWord(OPCODE_ACK);
 	addWord(packet_num);
-
 	return true;
-
 }
 
 bool TFTP_Packet::createData(int block, char* data, int data_size) {
 
-/*	   2 bytes    2 bytes       n bytes
-----------------------------------------
-DATA  | 03    |   Block #  |    Data    |
----------------------------------------- */
-
 	clear();
 	addWord(OPCODE_DATA);
 	addWord(block);
-
 	addMemory(data, data_size);
-
 	return true;
-
 }
 
 bool TFTP_Packet::createError(int error_code, char* message) {
-
-/*        2 bytes  2 bytes        string    1 byte
-          ----------------------------------------
-	ERROR | 05    |  ErrorCode |   ErrMsg   |   0  |
-          ----------------------------------------  */
 
 	clear();
 	addWord(OPCODE_ERROR);
 	addWord(error_code);
 	addString(message);
 	addByte(0);
-
 	return true;
 
 }
@@ -275,7 +235,7 @@ bool TFTP_Packet::setSize(int size) {
 }
 
 /*
- * Helper functions~
+ * ~Helper functions~
  */
 bool TFTP_Packet::isWRQ() {
 	return (this->getOPCode == OPCODE_WRITE);
