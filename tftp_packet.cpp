@@ -3,9 +3,9 @@
 using namespace std;
 
 TFTP_Packet::TFTP_Packet()	{
-	clear();
+	// initialize the packet
+    clear();
 }
-
 
 TFTP_Packet::~TFTP_Packet() {
 }
@@ -15,7 +15,7 @@ void TFTP_Packet::clear()	{
     current_packet_size = 0;
     // Put "current_packet_size" at the beginning of the block of memory
     // occupied by data
-	memset(data, current_packet_size, TFTP_PACKET_MAX_SIZE);
+	memset(data, current_packet_size, TFTP_PACKET_SIZE);
 }
 
 unsigned char* TFTP_Packet::getData(int offset) {
@@ -30,11 +30,9 @@ word TFTP_Packet::getOPCode() {
 }
 
 /*
- * This will be called until the file is copied 
- * over entirely...
+ * Copy data from one area of memory to another
  */
 bool TFTP_Packet::copyData(int offset, char* dest, int length) {
-
     // Make sure we are not attempting to place data
     // outside of the memory we have allocated
 	if (offset > this->getSize())
@@ -60,7 +58,7 @@ bool TFTP_Packet::copyData(int offset, char* dest, int length) {
  */
 bool TFTP_Packet::addByte(BYTE b) {
 
-	if (current_packet_size >= TFTP_PACKET_MAX_SIZE) {
+	if (current_packet_size >= TFTP_PACKET_SIZE) {
 		return false;
 	}
     // Add new byte to the packet we are assembling
@@ -73,7 +71,6 @@ bool TFTP_Packet::addByte(BYTE b) {
  * 1 word = 2 bytes
  */
 bool TFTP_Packet::addWord(word w) {
-
     // add first half
 	if (!addByte(*(((byte*)&w)+1)))
     {
@@ -85,9 +82,11 @@ bool TFTP_Packet::addWord(word w) {
 
 /*
  * Build the string component of the packet
+ *
+ * This is only relevant for read/write and error
+ * packets.
  */
 bool TFTP_Packet::addString(char* str) {
-
 	int n = strlen(str);
 	for (int i=0; i < n; i++) {
 		if (!addByte(*(str + i))) {
@@ -102,11 +101,10 @@ bool TFTP_Packet::addString(char* str) {
  */
 bool TFTP_Packet::addMemory(char* buffer, int len) {
 
-	if (current_packet_size + len >= TFTP_PACKET_MAX_SIZE)	{
-		cout << "Error: Max packet size already reached.\n";
+	if (current_packet_size + len >= TFTP_PACKET_SIZE)	{
+		cout << "Error: maximum size already reached.\n";
 		return false;
 	}
-
 	memcpy(&(data[current_packet_size]), buffer, len);
 	current_packet_size += len;
 	return true;
@@ -134,7 +132,6 @@ word TFTP_Packet::getWord(int offset) {
 
 
 word TFTP_Packet::getNumber() {
-
 	if (this->isData() || this->isACK())
     {
 		return this->getWord(2);
@@ -145,7 +142,6 @@ word TFTP_Packet::getNumber() {
 }
 
 bool TFTP_Packet::getString(int offset, char* buffer, int len) {
-
 	if (offset > current_packet_size)
     {
         return false;
@@ -154,7 +150,6 @@ bool TFTP_Packet::getString(int offset, char* buffer, int len) {
     {
         return false;
     }
-
 	memcpy(buffer, &(data[offset]), current_packet_size - offset);
 	return true;
 }
@@ -167,7 +162,6 @@ bool TFTP_Packet::getString(int offset, char* buffer, int len) {
  * followed by the filename
  */
 bool TFTP_Packet::createWRQ(char* filename) {
-
 	clear();
 	addWord(OPCODE_WRITE);
 	addString(filename);
@@ -181,15 +175,20 @@ bool TFTP_Packet::createWRQ(char* filename) {
  * Assemble the ACK packet
  */
 bool TFTP_Packet::createACK(int packet_num) {
-
 	clear();
 	addWord(OPCODE_ACK);
 	addWord(packet_num);
 	return true;
 }
 
+/*
+ * Assemble a DATA packet.
+ *
+ * This will ideally be used enough times to create
+ * the entirety of a file's data when writing to
+ * the server.
+ */
 bool TFTP_Packet::createData(int block, char* data, int data_size) {
-
 	clear();
 	addWord(OPCODE_DATA);
 	addWord(block);
@@ -197,8 +196,13 @@ bool TFTP_Packet::createData(int block, char* data, int data_size) {
 	return true;
 }
 
+/*
+ * Create an error packet. For example, maybe the file
+ * being Put to the server already exists. Somewhere, I
+ * will need to define error codes to correspond with
+ * common errors that might arise.
+ */
 bool TFTP_Packet::createError(int error_code, char* message) {
-
 	clear();
 	addWord(OPCODE_ERROR);
 	addWord(error_code);
@@ -208,20 +212,11 @@ bool TFTP_Packet::createError(int error_code, char* message) {
 
 }
 
+/*
+ * Get the current size of the packet
+ */
 int TFTP_Packet::getSize() {
 	return current_packet_size;
-}
-
-bool TFTP_Packet::setSize(int size) {
-	if (size <= TFTP_PACKET_MAX_SIZE)
-    {
-		current_packet_size = size;
-		return true;
-	}
-    else
-    {
-		return false;
-	}
 }
 
 /*

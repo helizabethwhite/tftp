@@ -7,8 +7,7 @@ typedef unsigned short word;
 #define OPCODE_ACK      4
 #define OPCODE_ERROR    5
 
-#define TFTP_PACKET_MAX_SIZE 1024
-#define TFTP_PACKET_DATA_SIZE 512
+#define TFTP_PACKET_SIZE 512
 
 //"netascii", "octet", or "mail" are all
 // possibilities, but for this spec we will use octet mode
@@ -21,7 +20,7 @@ class TFTP_Packet {
 	protected:
 		
 		int current_packet_size;
-		unsigned char data[TFTP_PACKET_MAX_SIZE]; // allocate data space
+		unsigned char data[TFTP_PACKET_SIZE]; // allocate data space
 
 	public:
 
@@ -31,7 +30,6 @@ class TFTP_Packet {
 		void clear();
 
 		int getSize();
-		bool setSize(int size);
 
 		bool addByte(byte b);
 		bool addWord(word w);
@@ -43,15 +41,16 @@ class TFTP_Packet {
 		bool getString(int offset, char* buffer, int length);
 		word getNumber();
 		unsigned char* getData(int offset = 0);
+    
 		bool copyData(int offset, char* dest, int length);
+        bool sendPacket(TFTP_Packet*);
 
 		bool createRRQ(char* filename);
 		bool createWRQ(char* filename);
 		bool createACK(int packet_num);
 		bool createData(int block, char* data, int data_size);
 		bool createError(int error_code, char* message);
-
-		bool sendPacket(TFTP_Packet*);
+    
 		bool isWRQ();
 		bool isACK();
 		bool isData();
