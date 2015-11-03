@@ -14,7 +14,7 @@
 
 void set_opcode(char *packet, int op)
 {
-	// condense opcode to fit in a byte
+	// opcode should fit in a byte
 	packet[0] = 0;
 	packet[1] = (unsigned char)op;
 }
@@ -115,6 +115,7 @@ int main(int argc, char *argv[]){
           {
               // if you send to without binding first, it will bind to random available port
               sendto(new_listening_socket, packet, sizeof(packet), 0, &client, sizeof(client));
+              block_num++;
           }
           
           fprintf(stderr, "New client port number: %d\n", client.sin_port);
@@ -139,6 +140,16 @@ int main(int argc, char *argv[]){
               
               block = buffer[2] << 8 | buffer[3];
               fprintf(stderr,"Unique client port - block num: %d\n", block);
+              
+              set_opcode(packet, 4);
+              set_block_num(packet, block_num);
+              
+              if (opcode == 2)
+              {
+                  // if you send to without binding first, it will bind to random available port
+                  sendto(new_listening_socket, packet, sizeof(packet), 0, &client, sizeof(client));
+                  block_num++;
+              }
               
               
           }
