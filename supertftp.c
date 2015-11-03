@@ -30,7 +30,7 @@ int main(int argc, char *argv[]){
 
   int main_listening_socket, new_listening_socket;
   int listening_port;
-  int buffer_length = 512;
+  int buffer_length = 516;
     int pid;
 
 
@@ -82,7 +82,6 @@ int main(int argc, char *argv[]){
       }
       
       opcode = ntohs(*(unsigned short int*)&buffer); //opcode is in network byte order, convert to local byte order
-      fprintf(stderr,"Main server port - opcode: %d\n",opcode,2);
       
       /*mode = (char*)&buffer+2+strlen(filename)+1;
       fprintf(stderr,"Main server port - mode: %s\n",mode,strlen(mode));*/
@@ -96,7 +95,6 @@ int main(int argc, char *argv[]){
       else if (opcode == OPCODE_WRITE)
       {
           filename = (char*)&buffer+2;
-          fprintf(stderr,"Main server port - filename: %s\n",filename,strlen(filename));
           
           // Check to see if the file already exists
           if (access(filename, F_OK) != -1)
@@ -146,9 +144,6 @@ int main(int argc, char *argv[]){
           sendto(new_listening_socket, packet, sizeof(packet), 0, &client, sizeof(client));
           block_num++;
           
-          fprintf(stderr, "New client port number: %d\n", client.sin_port);
-          fprintf(stderr, "Accepting requests on port %d\n", client.sin_port);
-          
           
           // Keep receiving requests while keeping track of block number
           while(1)
@@ -156,18 +151,17 @@ int main(int argc, char *argv[]){
               unsigned short op_code;
               unsigned short block;
               
+              bzero(buffer, buffer_length);
+              
               int new_msg_len = recvfrom(new_listening_socket,buffer,buffer_length,0,(struct sockaddr *)&client,(socklen_t *)&fromlen);
               
               if(new_msg_len < 0){
-                  fprintf(stderr,"No msg");
                   continue;
               }
               
               op_code = ntohs(*(unsigned short int*)&buffer);
-              fprintf(stderr,"Unique client port - opcode: %d\n",op_code,2);
               
               block = buffer[2] << 8 | buffer[3];
-              fprintf(stderr,"Unique client port - block num: %d\n", block);
               
               
               if (opcode == OPCODE_WRITE)
@@ -185,7 +179,6 @@ int main(int argc, char *argv[]){
               // Last packet received, child process should exit
               if (new_msg_len < 512)
               {
-                  fprintf(stderr,"Child process exiting.\n");
                   fclose(fp);
                   exit(1);
               }
