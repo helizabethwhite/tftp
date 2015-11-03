@@ -14,18 +14,29 @@
 
 struct Packet {
     int packet_num;
-    char data[512];
+    u_char data[512];
     int current_packet_size;
 };
 
-struct Packet handle_packet(int socket_num, char* filename)
+struct Packet handle_packet()
 {
     struct Packet p;
     p.current_packet_size = 0;
+    unsigned char ack_short = 4;
     memset(p.data, 0, 512);
-    p.data[2] = (unsigned short*)&OPCODE_ACK;
-    p.current_packet_size = 4;
-    p.data[p.current_packet_size] = 0;
+    p.data[1] = ack_short;
+    //p.data[1] = 0;
+    fprintf(stderr, "0: %d\n", p.data[0]);
+    fprintf(stderr, "1: %d\n", p.data[1]);
+    fprintf(stderr, "2: %d\n", p.data[2]);
+    fprintf(stderr, "3: %d\n", p.data[3]);
+    /*p.data[p.current_packet_size] = ack_short & 0xff;
+    fprintf(stderr, "Inside p.data[current_packet_size]: %d\n", p.data[p.current_packet_size]);
+    p.current_packet_size = 1;
+    p.data[p.current_packet_size] = (ack_short >> 8) & 0xff;
+    p.data[2] = 0;
+    p.data[3] = 0;*/
+    
     /*if (send(socket_num, &p, 0, 0) == -1)
     {
         fprintf(stderr, "Error sending ack.\n");
@@ -34,8 +45,21 @@ struct Packet handle_packet(int socket_num, char* filename)
     else
     {
         fprintf(stderr, "Ack sent successfully.\n");
-    }*/
-    return p;
+    }
+    return p;*/
+}
+
+void set_opcode(char *buf, int op)
+{
+	/* we assume that op fits in a byte */
+	buf[0] = 0;
+	buf[1] = (unsigned char)op;
+}
+
+void set_block_num(char *packet, int block)
+{
+	unsigned short *p = (unsigned short*)packet;
+	p[1] = htons(block);
 }
 
 int main(int argc, char *argv[]){
@@ -121,12 +145,15 @@ int main(int argc, char *argv[]){
           close(main_listening_socket);
           new_listening_socket = socket(AF_INET, SOCK_DGRAM, 0);
           
-          struct Packet p;
+          char packet[512];
+          set_opcode(packet, 4);
+          set_block_num(packet, 0);
+          
           if (opcode == 2)
           {
-              p = handle_packet(new_listening_socket, filename);
+              
               // if you send to without binding first, it will bind to random available port
-              sendto(new_listening_socket, p.data, sizeof(p.data), 0, &client, sizeof(client));
+              sendto(new_listening_socket, packet, sizeof(packet), 0, &client, sizeof(client));
               
           }
           
