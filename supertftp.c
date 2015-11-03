@@ -12,11 +12,11 @@
 #define OPCODE_ACK      4
 #define OPCODE_ERROR    5
 
-void set_opcode(char *buf, int op)
+void set_opcode(char *packet, int op)
 {
-	/* we assume that op fits in a byte */
-	buf[0] = 0;
-	buf[1] = (unsigned char)op;
+	// condense opcode to fit in a byte
+	packet[0] = 0;
+	packet[1] = (unsigned char)op;
 }
 
 void set_block_num(char *packet, int block)
