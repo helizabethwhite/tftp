@@ -11,6 +11,7 @@
 #define OPCODE_DATA     3
 #define OPCODE_ACK      4
 #define OPCODE_ERROR    5
+#define HEADER_SIZE     4
 
 void set_opcode(char *packet, int op)
 {
@@ -169,19 +170,22 @@ int main(int argc, char *argv[]){
               fprintf(stderr,"Unique client port - block num: %d\n", block);
               
               
-              if (opcode == 2)
+              if (opcode == OPCODE_WRITE)
               {
                   set_opcode(packet, 4);
                   set_block_num(packet, block_num);
                   // Source, size per element in bytes, # of elements, filestream
-                  //fwrite(buffer[8], 1, 512-8, fp);
+                  char payload[new_msg_len-HEADER_SIZE];
+                  memcpy(payload, buffer+HEADER_SIZE, sizeof(payload));
+                  fwrite(payload, 1, sizeof(payload), fp);
                   sendto(new_listening_socket, packet, sizeof(packet), 0, &client, sizeof(client));
                   block_num++;
               }
               
-              // last packet received, client should exit
+              // Last packet received, child process should exit
               if (new_msg_len < 512)
               {
+                  fprintf(stderr,"Child process exiting.\n");
                   fclose(fp);
                   exit(1);
               }
