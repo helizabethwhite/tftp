@@ -72,37 +72,62 @@ int main(int argc, char *argv[]){
   char * mode;
 
   while(1){
-	msg_len = recvfrom(main_listening_socket,buffer,buffer_length,0,(struct sockaddr *)&client,(socklen_t *)&fromlen);
+      
+      msg_len = recvfrom(main_listening_socket,buffer,buffer_length,0,(struct sockaddr *)&client,(socklen_t *)&fromlen);
 
-	if(msg_len < 0){
-        continue;
-	}
+      if(msg_len < 0)
+      {
+          continue;
+      }
       
       opcode = ntohs(*(unsigned short int*)&buffer); //opcode is in network byte order, convert to local byte order
       fprintf(stderr,"Main server port - opcode: %d\n",opcode,2);
       
-      filename = (char*)&buffer+2;
-      fprintf(stderr,"Main server port - filename: %s\n",filename,strlen(filename));
+      /*mode = (char*)&buffer+2+strlen(filename)+1;
+      fprintf(stderr,"Main server port - mode: %s\n",mode,strlen(mode));*/
       
-      mode = (char*)&buffer+2+strlen(filename)+1;
-      fprintf(stderr,"Main server port - mode: %s\n",mode,strlen(mode));
+      if (opcode == OPCODE_READ)
+      {
+          fprintf(stderr, "RRQ received, ignoring.\n");
+          continue;
+          
+      }
+      else if (opcode == OPCODE_WRITE)
+      {
+          filename = (char*)&buffer+2;
+          fprintf(stderr,"Main server port - filename: %s\n",filename,strlen(filename));
+          
+          // Check to see if the file already exists
+          if (access(filename, F_OK) != -1)
+          {
+              fprintf(stderr, "Error: File already exists.\n");
+              char packet[512];
+              set_opcode(packet, 5);
+              set_block_num(packet, 6); // Error Code 6: File already exists
+              sendto(main_listening_socket, packet, sizeof(packet), 0, &client, sizeof(client));
+          }
+          
+      }
       
       pid = fork();
       
+      // Error during fork, abort
       if (pid == -1)
       {
           exit(-1);
       }
-      // parent process
+      // Parent Process
       else if (pid > 0)
       {
           close(new_listening_socket);
       }
-      // child process
+      // Child Process
       else
       {
-          // SEND ACKNOWLEDGEMENT HERE?? (block num is 0), then send your first data
           close(main_listening_socket);
+          
+          char * file = filename; // Save this here so that it doesn't inadvertently get changed by parent...
+          
           new_listening_socket = socket(AF_INET, SOCK_DGRAM, 0);
           
           int block_num = 0;
@@ -111,18 +136,20 @@ int main(int argc, char *argv[]){
           set_opcode(packet, 4);
           set_block_num(packet, block_num);
           
-          if (opcode == 2)
-          {
-              // if you send to without binding first, it will bind to random available port
-              sendto(new_listening_socket, packet, sizeof(packet), 0, &client, sizeof(client));
-              block_num++;
-          }
+          FILE *fp;
+          fp=fopen(file, "w");
+          
+          // We've already confirmed we just received a WRQ and that the file doesn't exist already
+          // Send an ACK packet
+          // sendto without binding first will bind to random port, allowing for concurrency
+          sendto(new_listening_socket, packet, sizeof(packet), 0, &client, sizeof(client));
+          block_num++;
           
           fprintf(stderr, "New client port number: %d\n", client.sin_port);
           fprintf(stderr, "Accepting requests on port %d\n", client.sin_port);
           
           
-          // keep receiving requests and keeping track of block number
+          // Keep receiving requests while keeping track of block number
           while(1)
           {
               unsigned short op_code;
@@ -141,20 +168,24 @@ int main(int argc, char *argv[]){
               block = buffer[2] << 8 | buffer[3];
               fprintf(stderr,"Unique client port - block num: %d\n", block);
               
-              set_opcode(packet, 4);
-              set_block_num(packet, block_num);
               
               if (opcode == 2)
               {
-                  // if you send to without binding first, it will bind to random available port
+                  set_opcode(packet, 4);
+                  set_block_num(packet, block_num);
+                  // Source, size per element in bytes, # of elements, filestream
+                  //fwrite(buffer[8], 1, 512-8, fp);
                   sendto(new_listening_socket, packet, sizeof(packet), 0, &client, sizeof(client));
                   block_num++;
               }
               
-              
+              // last packet received, client should exit
+              if (new_msg_len < 512)
+              {
+                  fclose(fp);
+                  exit(1);
+              }
           }
-         
-          
           
       }
       
