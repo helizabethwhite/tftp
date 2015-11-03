@@ -12,43 +12,6 @@
 #define OPCODE_ACK      4
 #define OPCODE_ERROR    5
 
-struct Packet {
-    int packet_num;
-    u_char data[512];
-    int current_packet_size;
-};
-
-struct Packet handle_packet()
-{
-    struct Packet p;
-    p.current_packet_size = 0;
-    unsigned char ack_short = 4;
-    memset(p.data, 0, 512);
-    p.data[1] = ack_short;
-    //p.data[1] = 0;
-    fprintf(stderr, "0: %d\n", p.data[0]);
-    fprintf(stderr, "1: %d\n", p.data[1]);
-    fprintf(stderr, "2: %d\n", p.data[2]);
-    fprintf(stderr, "3: %d\n", p.data[3]);
-    /*p.data[p.current_packet_size] = ack_short & 0xff;
-    fprintf(stderr, "Inside p.data[current_packet_size]: %d\n", p.data[p.current_packet_size]);
-    p.current_packet_size = 1;
-    p.data[p.current_packet_size] = (ack_short >> 8) & 0xff;
-    p.data[2] = 0;
-    p.data[3] = 0;*/
-    
-    /*if (send(socket_num, &p, 0, 0) == -1)
-    {
-        fprintf(stderr, "Error sending ack.\n");
-        exit(1);
-    }
-    else
-    {
-        fprintf(stderr, "Ack sent successfully.\n");
-    }
-    return p;*/
-}
-
 void set_opcode(char *buf, int op)
 {
 	/* we assume that op fits in a byte */
@@ -60,6 +23,14 @@ void set_block_num(char *packet, int block)
 {
 	unsigned short *p = (unsigned short*)packet;
 	p[1] = htons(block);
+}
+
+char *createACKPacket()
+{
+    char packet[512];
+    set_opcode(packet, 4);
+    set_block_num(packet, 0);
+    return packet;
 }
 
 int main(int argc, char *argv[]){
@@ -109,24 +80,21 @@ int main(int argc, char *argv[]){
   char * mode;
 
   while(1){
-	 fprintf(stderr,"At top of loop\n");
 	msg_len = recvfrom(main_listening_socket,buffer,buffer_length,0,(struct sockaddr *)&client,(socklen_t *)&fromlen);
 
 	if(msg_len < 0){
-		fprintf(stderr,"No msg");
         continue;
 	}
       
       opcode = ntohs(*(unsigned short int*)&buffer); //opcode is in network byte order, convert to local byte order
-      fprintf(stderr,"Opcode: %d\n",opcode,2);
+      fprintf(stderr,"Main server port - opcode: %d\n",opcode,2);
       
       filename = (char*)&buffer+2;
-      fprintf(stderr,"Filename: %s\n",filename,strlen(filename));
+      fprintf(stderr,"Main server port - filename: %s\n",filename,strlen(filename));
       
       mode = (char*)&buffer+2+strlen(filename)+1;
-      fprintf(stderr,"Mode: %s\n",mode,strlen(mode));
+      fprintf(stderr,"Main server port - mode: %s\n",mode,strlen(mode));
       
-      fprintf(stderr,"About to fork...\n");
       pid = fork();
       
       if (pid == -1)
@@ -145,44 +113,46 @@ int main(int argc, char *argv[]){
           close(main_listening_socket);
           new_listening_socket = socket(AF_INET, SOCK_DGRAM, 0);
           
+          int block_num = 0;
+          
           char packet[512];
           set_opcode(packet, 4);
-          set_block_num(packet, 0);
+          set_block_num(packet, block_num);
           
           if (opcode == 2)
           {
-              
               // if you send to without binding first, it will bind to random available port
               sendto(new_listening_socket, packet, sizeof(packet), 0, &client, sizeof(client));
-              
           }
           
           fprintf(stderr, "New client port number: %d\n", client.sin_port);
-          int new_msg_len = recvfrom(new_listening_socket,buffer,buffer_length,0,(struct sockaddr *)&client,(socklen_t *)&fromlen);
-          
-          if(new_msg_len < 0){
-              fprintf(stderr,"No msg");
-              continue;
-          }
           fprintf(stderr, "Accepting requests on port %d\n", client.sin_port);
           
-          // write request
+          
+          // keep receiving requests and keeping track of block number
+          while(1)
+          {
+              unsigned short op_code;
+              unsigned short block;
+              
+              int new_msg_len = recvfrom(new_listening_socket,buffer,buffer_length,0,(struct sockaddr *)&client,(socklen_t *)&fromlen);
+              
+              if(new_msg_len < 0){
+                  fprintf(stderr,"No msg");
+                  continue;
+              }
+              
+              op_code = ntohs(*(unsigned short int*)&buffer);
+              fprintf(stderr,"Unique client port - opcode: %d\n",op_code,2);
+              
+              block = ntohs(*(unsigned short int*)&buffer);
+              fprintf(stderr,"Unique client port - block: %s\n",block,2);
+              
+          }
+         
           
           
       }
-
-	//memcpy(opcode,buffer,2);
-	//opcode = (unsigned short int* )&buffer;
-		//fprintf(stderr,"%d",ntohs((unsigned short int)*opcode),2);
-
-
-      /*fprintf(stderr, "%s request for %s from %s using port %d\n", opcode, filename, inet_ntoa(client.sin_addr), ntohs(client.sin_port));*/
-      
-      fprintf(stderr,"My pid: %d\n", pid);
-	//sendto (listening_socket,resbuf,512,0,(struct sockaddr*)&client,fromlen)
-
-
-	//write(1,buffer,msg_len);
       
   }
 
