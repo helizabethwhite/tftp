@@ -25,14 +25,6 @@ void set_block_num(char *packet, int block)
 	p[1] = htons(block);
 }
 
-char *createACKPacket()
-{
-    char packet[512];
-    set_opcode(packet, 4);
-    set_block_num(packet, 0);
-    return packet;
-}
-
 int main(int argc, char *argv[]){
 
   int main_listening_socket, new_listening_socket;
@@ -145,8 +137,9 @@ int main(int argc, char *argv[]){
               op_code = ntohs(*(unsigned short int*)&buffer);
               fprintf(stderr,"Unique client port - opcode: %d\n",op_code,2);
               
-              block = ntohs(*(unsigned short int*)&buffer);
-              fprintf(stderr,"Unique client port - block: %s\n",block,2);
+              block = buffer[2] << 8 | buffer[3];
+              fprintf(stderr,"Unique client port - block num: %d\n", block);
+              
               
           }
          
