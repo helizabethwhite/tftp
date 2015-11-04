@@ -93,6 +93,8 @@ int main(int argc, char *argv[]){
     int fromlen;
     char buffer[buffer_length];
     char resbuf[512];
+    
+    char temp_filename[80]; // arbitrarily large filename to specify filename+directory
 
     unsigned short opcode;
     
@@ -101,8 +103,8 @@ int main(int argc, char *argv[]){
     while(1){
       
         // create working directory for server temp storage
-      if (stat("../temp", &st) == -1) {
-          mkdir("../temp", 0700);
+      if (stat("../tftp_temp", &st) == -1) {
+          mkdir("../tftp_temp", 0700);
       }
       
       msg_len = recvfrom(main_listening_socket,buffer,buffer_length,0,(struct sockaddr *)&client,(socklen_t *)&fromlen);
@@ -166,8 +168,10 @@ int main(int argc, char *argv[]){
           int block_num = 0;
           
           char file[40];
-          strcpy(file, filename);
-          fprintf(stderr,"Filename: %s\n",file,strlen(file));
+          strcpy(file, filename); // preserve filename
+          
+          strcpy(temp_filename, "../tftp_temp/");
+          strcat(temp_filename, file);
           
           
           char packet[512];
@@ -177,7 +181,7 @@ int main(int argc, char *argv[]){
           // This is a temporary file for writing to while receiving packets, so as to
           // only display the final file when all data has been written
           FILE *fp;
-          fp = fopen("temp.txt", "w");
+          fp = fopen(temp_filename, "w");
          
           
           // We've already confirmed we just received a WRQ and that the file doesn't exist already
@@ -196,7 +200,8 @@ int main(int argc, char *argv[]){
               
               int new_msg_len = recvfrom(new_listening_socket,buffer,buffer_length,0,(struct sockaddr *)&client,(socklen_t *)&fromlen);
               
-              if(new_msg_len < 0){
+              if (new_msg_len < 0)
+              {
                   continue;
               }
               
@@ -228,43 +233,12 @@ int main(int argc, char *argv[]){
               if (new_msg_len < 512)
               {
                   close(fp);
-                  complete_write(file, "temp.txt");
-                  
                   // Transfer contents of temp file into correct file
                   // Do this by looping through the temp file and copying into destination file
-                  //remove("temp.txt"); // delete the temporary file
-                  
-                  //See working directory :)
-                  /*char cwd[1024];
-                  if (getcwd(cwd, sizeof(cwd)) != NULL){
-                      fprintf(stdout, "Current working dir: %s\n", cwd);
-                  }
-                  else {
-                      perror("getcwd() error");
-                  }
-                  
-                  result = fopen(filename, "w+");
-                  if (result == NULL)
-                  {
-                      perror("error");
-                  }*/
-                  
-                  // Reset buffer to be at beginning of file
-                  
-                  /*char c = fgetc(fp);
-                  while (c != EOF)
-                  {
-                      fputc(c, result);
-                      c = fgetc(fp);
-                  }
-                  
-                  fclose(fp);
-                  fclose(result);*/
+                  complete_write(file, temp_filename);
                   close(new_listening_socket);
                   exit(1);
               }
-              
-              
               
           }
           
