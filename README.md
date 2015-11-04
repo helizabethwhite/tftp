@@ -6,4 +6,4 @@ gcc supertftp.c
 
 To run the server:
 
-./a.out <specify a port number>
+./a.out <<specify a port number>>
