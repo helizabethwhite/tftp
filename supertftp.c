@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <netinet/in.h>
 
 #define OPCODE_READ     1   // Not gonna use this one...
@@ -12,6 +13,7 @@
 #define OPCODE_ACK      4
 #define OPCODE_ERROR    5
 #define HEADER_SIZE     4
+#include <unistd.h>
 
 void set_opcode(char *packet, int op)
 {
@@ -25,6 +27,30 @@ void set_block_num(char *packet, int block)
 	unsigned short *p = (unsigned short*)packet;
 	p[1] = htons(block);
 }
+
+void complete_write(char* dest, char* src)
+{
+    FILE* result = fopen(dest, "wb");
+    
+    FILE* temp = fopen(src, "rb");
+    
+    if (temp == NULL)
+    {
+        perror("error");
+    }
+    
+    int c = fgetc(temp);
+    while (c != EOF)
+    {
+        fputc(c, result);
+        c = fgetc(temp);
+    }
+    fclose(result);
+    fclose(temp);
+    remove(src);
+}
+
+char * filename;
 
 int main(int argc, char *argv[]){
 
@@ -63,16 +89,21 @@ int main(int argc, char *argv[]){
 	exit(-1);
   }
 
-  int msg_len =-1;
-  int fromlen;
-  char buffer[buffer_length];
-  char resbuf[512];
+    int msg_len =-1;
+    int fromlen;
+    char buffer[buffer_length];
+    char resbuf[512];
 
-  unsigned short opcode;
-  char * filename;
-  char * mode;
-
-  while(1){
+    unsigned short opcode;
+    
+    struct stat st = {0};
+    
+    while(1){
+      
+        // create working directory for server temp storage
+      if (stat("../temp", &st) == -1) {
+          mkdir("../temp", 0700);
+      }
       
       msg_len = recvfrom(main_listening_socket,buffer,buffer_length,0,(struct sockaddr *)&client,(socklen_t *)&fromlen);
 
@@ -82,7 +113,6 @@ int main(int argc, char *argv[]){
       }
       
       opcode = ntohs(*(unsigned short int*)&buffer); //opcode is in network byte order, convert to local byte order
-      fprintf(stderr,"Main server port - opcode: %d\n",opcode,2);
       
       /*mode = (char*)&buffer+2+strlen(filename)+1;
       fprintf(stderr,"Main server port - mode: %s\n",mode,strlen(mode));*/
@@ -96,7 +126,9 @@ int main(int argc, char *argv[]){
       else if (opcode == OPCODE_WRITE)
       {
           filename = (char*)&buffer+2;
-          fprintf(stderr,"Main server port - filename: %s\n",filename,strlen(filename));
+          //filename = strcat("../temp/",filename); // make it in our working directory
+          //fprintf(stderr,"Main server port - mode: %s\n",filename,strlen(filename));
+          
           
           // Check to see if the file already exists
           if (access(filename, F_OK) != -1)
@@ -115,6 +147,8 @@ int main(int argc, char *argv[]){
       // Error during fork, abort
       if (pid == -1)
       {
+          close(main_listening_socket);
+          close(new_listening_socket);
           exit(-1);
       }
       // Parent Process
@@ -127,28 +161,30 @@ int main(int argc, char *argv[]){
       {
           close(main_listening_socket);
           
-          char * file = filename; // Save this here so that it doesn't inadvertently get changed by parent...
-          
           new_listening_socket = socket(AF_INET, SOCK_DGRAM, 0);
           
           int block_num = 0;
+          
+          char file[40];
+          strcpy(file, filename);
+          fprintf(stderr,"Filename: %s\n",file,strlen(file));
+          
           
           char packet[512];
           set_opcode(packet, 4);
           set_block_num(packet, block_num);
           
+          // This is a temporary file for writing to while receiving packets, so as to
+          // only display the final file when all data has been written
           FILE *fp;
-          fp=fopen(file, "w");
+          fp = fopen("temp.txt", "w");
+         
           
           // We've already confirmed we just received a WRQ and that the file doesn't exist already
           // Send an ACK packet
           // sendto without binding first will bind to random port, allowing for concurrency
           sendto(new_listening_socket, packet, sizeof(packet), 0, &client, sizeof(client));
           block_num++;
-          
-          fprintf(stderr, "New client port number: %d\n", client.sin_port);
-          fprintf(stderr, "Accepting requests on port %d\n", client.sin_port);
-          
           
           // Keep receiving requests while keeping track of block number
           while(1)
@@ -161,37 +197,75 @@ int main(int argc, char *argv[]){
               int new_msg_len = recvfrom(new_listening_socket,buffer,buffer_length,0,(struct sockaddr *)&client,(socklen_t *)&fromlen);
               
               if(new_msg_len < 0){
-                  fprintf(stderr,"No msg");
                   continue;
               }
               
               op_code = ntohs(*(unsigned short int*)&buffer);
-              fprintf(stderr,"Unique client port - opcode: %d\n",op_code,2);
               
               block = buffer[2] << 8 | buffer[3];
-              fprintf(stderr,"Unique client port - block num: %d\n", block);
               
-              
-              if (op_code == OPCODE_DATA)
+              if (op_code == OPCODE_ERROR)
+              {
+                  fprintf(stderr,"Error received, exiting.\n");
+                  close(new_listening_socket);
+                  fclose(fp);
+                  exit(1);
+              }
+              else if (op_code == OPCODE_DATA)
               {
                   set_opcode(packet, 4);
                   set_block_num(packet, block_num);
                   // Source, size per element in bytes, # of elements, filestream
                   char payload[new_msg_len-HEADER_SIZE];
                   memcpy(payload, buffer+HEADER_SIZE, sizeof(payload));
-                  fprintf(stderr,"Size of payload: %d\n",  sizeof(payload));
                   fwrite(payload, 1, sizeof(payload), fp);
                   sendto(new_listening_socket, packet, sizeof(packet), 0, &client, sizeof(client));
                   block_num++;
               }
               
+              
               // Last packet received, child process should exit
               if (new_msg_len < 512)
               {
-                  fprintf(stderr,"Child process exiting.\n");
+                  close(fp);
+                  complete_write(file, "temp.txt");
+                  
+                  // Transfer contents of temp file into correct file
+                  // Do this by looping through the temp file and copying into destination file
+                  //remove("temp.txt"); // delete the temporary file
+                  
+                  //See working directory :)
+                  /*char cwd[1024];
+                  if (getcwd(cwd, sizeof(cwd)) != NULL){
+                      fprintf(stdout, "Current working dir: %s\n", cwd);
+                  }
+                  else {
+                      perror("getcwd() error");
+                  }
+                  
+                  result = fopen(filename, "w+");
+                  if (result == NULL)
+                  {
+                      perror("error");
+                  }*/
+                  
+                  // Reset buffer to be at beginning of file
+                  
+                  /*char c = fgetc(fp);
+                  while (c != EOF)
+                  {
+                      fputc(c, result);
+                      c = fgetc(fp);
+                  }
+                  
                   fclose(fp);
+                  fclose(result);*/
+                  close(new_listening_socket);
                   exit(1);
               }
+              
+              
+              
           }
           
       }
