@@ -5,7 +5,8 @@
  * The server only processes WRQ (write request) packets, and ignores all others
  * aside from ERROR.
  *
- * TO DO: Add timeouts on server end, and perhaps create instance of server for better unit testing?
+ * TO DO: Add timeouts on server end, block number exceeds the amount that 2 bytes can hold, and perhaps 
+ * create instance of server for better unit testing?
  *
  */
 
@@ -57,7 +58,7 @@ void complete_write(char* dest, char* src)
 {
     FILE* result = fopen(dest, "wb");
     
-    FILE* temp = fopen(src, "rb");
+    FILE* temp = fopen(src, "r");
     
     if (temp == NULL)
     {
@@ -72,7 +73,7 @@ void complete_write(char* dest, char* src)
     }
     fclose(result);
     fclose(temp);
-    remove(src);
+    rename(src, dest);
 }
 
 // filename taken from WRQ packets
@@ -126,10 +127,10 @@ int main(int argc, char *argv[]){
     while(1){
       
         // create working directory for server temp storage
-        if (stat("../tftp_temp", &st) == -1)
+        /*if (stat("../tftp_temp/", &st) == -1)
         {
-            mkdir("../tftp_temp", 0700);
-        }
+            mkdir("../tftp_temp/", 0700);
+        }*/
       
         msg_len = recvfrom(main_listening_socket,buffer,BUFFER_LENGTH,0,(struct sockaddr *)&client,(socklen_t *)&fromlen);
 
@@ -188,7 +189,7 @@ int main(int argc, char *argv[]){
           char file[40];
           strcpy(file, filename); // preserve filename gathered by first WRQ
           
-          strcpy(temp_filename, "../tftp_temp/");       // add temp directory to empty string
+          strcpy(temp_filename, "temp");       // add temp directory to empty string
           strcat(temp_filename, file);                  // concatenate temp directory with unique filename
           
           
@@ -199,7 +200,7 @@ int main(int argc, char *argv[]){
           // This is a temporary file for writing to while receiving packets, so as to
           // only display the final file when all data has been written
           FILE *fp;
-          fp = fopen(temp_filename, "w");
+          fp = fopen(temp_filename, "wb");
          
           
           // We've already confirmed we just received a WRQ and that the file doesn't exist already
