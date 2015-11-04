@@ -13,7 +13,6 @@
 #define OPCODE_ACK      4
 #define OPCODE_ERROR    5
 #define HEADER_SIZE     4
-#include <unistd.h>
 
 void set_opcode(char *packet, int op)
 {
