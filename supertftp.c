@@ -1,3 +1,12 @@
+/*
+ * created by helizabethwhite, 2015
+ *
+ * This file implements a simple TFTP server that runs on a specified port.
+ * The server only processes WRQ (write request) packets, and ignores all others
+ * aside from ERROR.
+ *
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -7,7 +16,7 @@
 #include <sys/stat.h>
 #include <netinet/in.h>
 
-#define OPCODE_READ     1   // Not gonna use this one...
+#define OPCODE_READ     1
 #define OPCODE_WRITE    2
 #define OPCODE_DATA     3
 #define OPCODE_ACK      4
@@ -73,7 +82,6 @@ int main(int argc, char *argv[]){
 
   struct sockaddr_in server;
   struct sockaddr_in client;
-  struct sockaddr_in newAddress;
   
   int addr_length = sizeof(server);
   bzero(&server,addr_length);
@@ -88,10 +96,9 @@ int main(int argc, char *argv[]){
 	exit(-1);
   }
 
-    int msg_len =-1;
+    int msg_len =-1;    // length of the packets received by client
     int fromlen;
-    char buffer[buffer_length];
-    char resbuf[512];
+    char buffer[buffer_length]; // temp storage of packets received
     
     char temp_filename[80]; // arbitrarily large filename to specify filename+directory
 
@@ -102,11 +109,12 @@ int main(int argc, char *argv[]){
     while(1){
       
         // create working directory for server temp storage
-      if (stat("../tftp_temp", &st) == -1) {
+        if (stat("../tftp_temp", &st) == -1)
+        {
           mkdir("../tftp_temp", 0700);
-      }
+        }
       
-      msg_len = recvfrom(main_listening_socket,buffer,buffer_length,0,(struct sockaddr *)&client,(socklen_t *)&fromlen);
+        msg_len = recvfrom(main_listening_socket,buffer,buffer_length,0,(struct sockaddr *)&client,(socklen_t *)&fromlen);
 
       if(msg_len < 0)
       {
@@ -169,8 +177,8 @@ int main(int argc, char *argv[]){
           char file[40];
           strcpy(file, filename); // preserve filename
           
-          strcpy(temp_filename, "../tftp_temp/");
-          strcat(temp_filename, file);
+          strcpy(temp_filename, "../tftp_temp/");       // add temp directory to empty string
+          strcat(temp_filename, file);                  // concatenate temp directory with unique filename
           
           
           char packet[512];
@@ -190,6 +198,7 @@ int main(int argc, char *argv[]){
           block_num++;
           
           // Keep receiving requests while keeping track of block number
+          int new_msg_len;
           while(1)
           {
               unsigned short op_code;
@@ -197,7 +206,7 @@ int main(int argc, char *argv[]){
               
               bzero(buffer, buffer_length);
               
-              int new_msg_len = recvfrom(new_listening_socket,buffer,buffer_length,0,(struct sockaddr *)&client,(socklen_t *)&fromlen);
+              new_msg_len = recvfrom(new_listening_socket,buffer,buffer_length,0,(struct sockaddr *)&client,(socklen_t *)&fromlen);
               
               if (new_msg_len < 0)
               {
@@ -232,6 +241,7 @@ int main(int argc, char *argv[]){
               if (new_msg_len < 512)
               {
                   close(fp);
+                  
                   // Transfer contents of temp file into correct file
                   // Do this by looping through the temp file and copying into destination file
                   complete_write(file, temp_filename);
