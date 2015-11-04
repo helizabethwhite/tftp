@@ -5,6 +5,8 @@
  * The server only processes WRQ (write request) packets, and ignores all others
  * aside from ERROR.
  *
+ * TO DO: Add timeouts on server end, and perhaps create instance of server for better unit testing?
+ *
  */
 
 #include <stdio.h>
@@ -15,14 +17,20 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <netinet/in.h>
+#include <assert.h>
 
-#define OPCODE_READ     1
-#define OPCODE_WRITE    2
-#define OPCODE_DATA     3
-#define OPCODE_ACK      4
-#define OPCODE_ERROR    5
-#define HEADER_SIZE     4
+#define OPCODE_READ             1
+#define OPCODE_WRITE            2
+#define OPCODE_DATA             3
+#define OPCODE_ACK              4
+#define OPCODE_ERROR            5
+#define HEADER_SIZE             4
+#define BUFFER_LENGTH           516
+#define MAX_PAYLOAD_LENGTH      512
 
+/*
+ * Used to set the first 2 bytes of a packet
+ */
 void set_opcode(char *packet, int op)
 {
 	// opcode should fit in a byte
@@ -30,12 +38,21 @@ void set_opcode(char *packet, int op)
 	packet[1] = (unsigned char)op;
 }
 
+/* 
+ * Used to set the second 2 bytes of a packet
+ */
 void set_block_num(char *packet, int block)
 {
 	unsigned short *p = (unsigned short*)packet;
 	p[1] = htons(block);
 }
 
+/*
+ * Used to copy contents of temp file to 
+ * destination file so that the result only
+ * appears on server after all packets have
+ * been successfully received
+ */
 void complete_write(char* dest, char* src)
 {
     FILE* result = fopen(dest, "wb");
@@ -58,13 +75,13 @@ void complete_write(char* dest, char* src)
     remove(src);
 }
 
+// filename taken from WRQ packets
 char * filename;
 
 int main(int argc, char *argv[]){
-
-  int main_listening_socket, new_listening_socket;
-  int listening_port;
-  int buffer_length = 516;
+    
+    int main_listening_socket, new_listening_socket;
+    int listening_port;
     int pid;
 
 
@@ -98,7 +115,7 @@ int main(int argc, char *argv[]){
 
     int msg_len =-1;    // length of the packets received by client
     int fromlen;
-    char buffer[buffer_length]; // temp storage of packets received
+    char buffer[BUFFER_LENGTH]; // temp storage of packets received
     
     char temp_filename[80]; // arbitrarily large filename to specify filename+directory
 
@@ -111,20 +128,17 @@ int main(int argc, char *argv[]){
         // create working directory for server temp storage
         if (stat("../tftp_temp", &st) == -1)
         {
-          mkdir("../tftp_temp", 0700);
+            mkdir("../tftp_temp", 0700);
         }
       
-        msg_len = recvfrom(main_listening_socket,buffer,buffer_length,0,(struct sockaddr *)&client,(socklen_t *)&fromlen);
+        msg_len = recvfrom(main_listening_socket,buffer,BUFFER_LENGTH,0,(struct sockaddr *)&client,(socklen_t *)&fromlen);
 
-      if(msg_len < 0)
+      if (msg_len < 0)
       {
           continue;
       }
       
       opcode = ntohs(*(unsigned short int*)&buffer); //opcode is in network byte order, convert to local byte order
-      
-      /*mode = (char*)&buffer+2+strlen(filename)+1;
-      fprintf(stderr,"Main server port - mode: %s\n",mode,strlen(mode));*/
       
       if (opcode == OPCODE_READ)
       {
@@ -135,16 +149,13 @@ int main(int argc, char *argv[]){
       else if (opcode == OPCODE_WRITE)
       {
           filename = (char*)&buffer+2;
-          //filename = strcat("../temp/",filename); // make it in our working directory
-          //fprintf(stderr,"Main server port - mode: %s\n",filename,strlen(filename));
-          
           
           // Check to see if the file already exists
           if (access(filename, F_OK) != -1)
           {
               fprintf(stderr, "Error: File already exists.\n");
-              char packet[512];
-              set_opcode(packet, 5);
+              char packet[MAX_PAYLOAD_LENGTH];
+              set_opcode(packet, OPCODE_ERROR);
               set_block_num(packet, 6); // Error Code 6: File already exists
               sendto(main_listening_socket, packet, sizeof(packet), 0, &client, sizeof(client));
           }
@@ -175,14 +186,14 @@ int main(int argc, char *argv[]){
           int block_num = 0;
           
           char file[40];
-          strcpy(file, filename); // preserve filename
+          strcpy(file, filename); // preserve filename gathered by first WRQ
           
           strcpy(temp_filename, "../tftp_temp/");       // add temp directory to empty string
           strcat(temp_filename, file);                  // concatenate temp directory with unique filename
           
           
-          char packet[512];
-          set_opcode(packet, 4);
+          char packet[MAX_PAYLOAD_LENGTH];
+          set_opcode(packet, OPCODE_ACK);
           set_block_num(packet, block_num);
           
           // This is a temporary file for writing to while receiving packets, so as to
@@ -195,6 +206,10 @@ int main(int argc, char *argv[]){
           // Send an ACK packet
           // sendto without binding first will bind to random port, allowing for concurrency
           sendto(new_listening_socket, packet, sizeof(packet), 0, &client, sizeof(client));
+          
+          // Verify that the new port does not equal the main server port
+          assert(client.sin_port != listening_port);
+          
           block_num++;
           
           // Keep receiving requests while keeping track of block number
@@ -204,9 +219,9 @@ int main(int argc, char *argv[]){
               unsigned short op_code;
               unsigned short block;
               
-              bzero(buffer, buffer_length);
+              bzero(buffer, BUFFER_LENGTH); // Set all contents of the buffer to contain 0s
               
-              new_msg_len = recvfrom(new_listening_socket,buffer,buffer_length,0,(struct sockaddr *)&client,(socklen_t *)&fromlen);
+              new_msg_len = recvfrom(new_listening_socket,buffer,BUFFER_LENGTH,0,(struct sockaddr *)&client,(socklen_t *)&fromlen);
               
               if (new_msg_len < 0)
               {
@@ -215,7 +230,7 @@ int main(int argc, char *argv[]){
               
               op_code = ntohs(*(unsigned short int*)&buffer);
               
-              block = buffer[2] << 8 | buffer[3];
+              block = buffer[2] << 8 | buffer[3]; // Concatenate upper and lower halves of the block into one short
               
               if (op_code == OPCODE_ERROR)
               {
@@ -226,10 +241,11 @@ int main(int argc, char *argv[]){
               }
               else if (op_code == OPCODE_DATA)
               {
-                  set_opcode(packet, 4);
+                  set_opcode(packet, OPCODE_ACK);
                   set_block_num(packet, block_num);
-                  // Source, size per element in bytes, # of elements, filestream
                   char payload[new_msg_len-HEADER_SIZE];
+                  
+                  // Source, size per element in bytes, # of elements, filestream
                   memcpy(payload, buffer+HEADER_SIZE, sizeof(payload));
                   fwrite(payload, 1, sizeof(payload), fp);
                   sendto(new_listening_socket, packet, sizeof(packet), 0, &client, sizeof(client));
@@ -238,7 +254,7 @@ int main(int argc, char *argv[]){
               
               
               // Last packet received, child process should exit
-              if (new_msg_len < 512)
+              if (new_msg_len < MAX_PAYLOAD_LENGTH)
               {
                   close(fp);
                   
