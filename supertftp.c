@@ -114,11 +114,11 @@ int main(int argc, char *argv[]){
 	exit(-1);
   }
 
-    int msg_len =-1;    // length of the packets received by client
+    int msg_len =-1;                            // length of the packets received by client
     int fromlen;
-    char buffer[BUFFER_LENGTH]; // temp storage of packets received
+    char buffer[BUFFER_LENGTH];                 // temp storage of packets received
     
-    char temp_filename[80]; // arbitrarily large filename to specify filename+directory
+    char temp_filename[80];                     // arbitrarily large filename to specify filename+directory
 
     unsigned short opcode;
     
@@ -139,17 +139,27 @@ int main(int argc, char *argv[]){
           continue;
       }
       
-      opcode = ntohs(*(unsigned short int*)&buffer); //opcode is in network byte order, convert to local byte order
+      opcode = ntohs(*(unsigned short int*)&buffer);    //opcode is in network byte order, convert to local byte order
+      filename = (char*)&buffer+2;
       
-      if (opcode == OPCODE_READ)
+        if (opcode == OPCODE_READ)
       {
-          fprintf(stderr, "RRQ received, ignoring.\n");
-          continue;
+          struct stat st;
+          int result = stat(filename, &st);
+          // Check to see if the file doesn't exist
+          if (result != 0)
+          {
+              fprintf(stderr, "Error: File doesn't exist.\n");
+              char packet[MAX_PAYLOAD_LENGTH];
+              set_opcode(packet, OPCODE_ERROR);
+              set_block_num(packet, 1); // Error Code 1: File not found
+              sendto(main_listening_socket, packet, sizeof(packet), 0, &client, sizeof(client));
+              continue;
+          }
           
       }
       else if (opcode == OPCODE_WRITE)
       {
-          filename = (char*)&buffer+2;
           
           // Check to see if the file already exists
           if (access(filename, F_OK) != -1)
@@ -159,6 +169,7 @@ int main(int argc, char *argv[]){
               set_opcode(packet, OPCODE_ERROR);
               set_block_num(packet, 6); // Error Code 6: File already exists
               sendto(main_listening_socket, packet, sizeof(packet), 0, &client, sizeof(client));
+              continue;
           }
           
       }
@@ -172,7 +183,7 @@ int main(int argc, char *argv[]){
           close(new_listening_socket);
           exit(-1);
       }
-      // Parent Process
+      // Parent Process, doesn't need to know about new socket
       else if (pid > 0)
       {
           close(new_listening_socket);
@@ -186,88 +197,207 @@ int main(int argc, char *argv[]){
           
           int block_num = 0;
           
-          char file[40];
-          strcpy(file, filename); // preserve filename gathered by first WRQ
-          
-          strcpy(temp_filename, "temp");       // add temp directory to empty string
-          strcat(temp_filename, file);                  // concatenate temp directory with unique filename
-          
-          
-          char packet[MAX_PAYLOAD_LENGTH];
-          set_opcode(packet, OPCODE_ACK);
-          set_block_num(packet, block_num);
-          
-          // This is a temporary file for writing to while receiving packets, so as to
-          // only display the final file when all data has been written
           FILE *fp;
-          fp = fopen(temp_filename, "wb");
-         
+          char file[40];
+          strcpy(file, filename);                       // preserve filename gathered by first processed req
           
-          // We've already confirmed we just received a WRQ and that the file doesn't exist already
-          // Send an ACK packet
-          // sendto without binding first will bind to random port, allowing for concurrency
-          sendto(new_listening_socket, packet, sizeof(packet), 0, &client, sizeof(client));
           
-          // Verify that the new port does not equal the main server port
-          assert(client.sin_port != listening_port);
-          
-          block_num++;
-          
-          // Keep receiving requests while keeping track of block number
-          int new_msg_len;
-          while(1)
+          if (opcode == OPCODE_READ)
           {
-              unsigned short op_code;
-              unsigned short block;
+              block_num++;                              // In contrast to WRQ, block number begins at 1 and not 0
               
-              bzero(buffer, BUFFER_LENGTH); // Set all contents of the buffer to contain 0s
+              fp = fopen(filename, "rb");               // open file for reading
               
-              new_msg_len = recvfrom(new_listening_socket,buffer,BUFFER_LENGTH,0,(struct sockaddr *)&client,(socklen_t *)&fromlen);
+              char *file_contents_buffer;               // Buffer used to store contents of file
+              size_t file_size;                         // Size of the file
+    
+              fseek(fp, 0, SEEK_END);
+              file_size = ftell(fp);                                            // get the size of the file
+              rewind(fp);                                                       // set our filestream back to the top of the file instead of the bottom
+              file_contents_buffer = malloc(file_size * (sizeof(char)));        // allocate buffer size to hold contents of file
+              fread(file_contents_buffer, sizeof(char), file_size, fp);         // read the contents of the file into the buffer
+              fclose(fp);
               
-              if (new_msg_len < 0)
+              int payload_length = MAX_PAYLOAD_LENGTH;
+              if (file_size < MAX_PAYLOAD_LENGTH)       // Always check the size of the file in case the file is small enough to transfer just one packet with reduced size
               {
-                  continue;
+                  payload_length = file_size;
               }
               
-              op_code = ntohs(*(unsigned short int*)&buffer);
+              char packet[4+payload_length];            // 516 bytes (4 bytes for opcode and blocknum + payload) is
+              set_opcode(packet, OPCODE_DATA);          // default for data packets, but our file size might be small enough for less
+              set_block_num(packet, block_num);
               
-              block = buffer[2] << 8 | buffer[3]; // Concatenate upper and lower halves of the block into one short
               
-              if (op_code == OPCODE_ERROR)
+              memcpy(packet+4, file_contents_buffer, payload_length); // Create our first packet of data
+              
+              sendto(new_listening_socket, packet, sizeof(packet), 0, &client, sizeof(client));     // Send our first data packet
+              
+              // Verify that the new port does not equal the main server port
+              assert(client.sin_port != listening_port);
+              
+              // Keep receiving requests while keeping track of block number
+              int new_msg_len;
+              int offset = 1;
+              int retransmit_attempts = 0;
+              int sent_last_packet = 0;
+              while(1)
               {
-                  fprintf(stderr,"Error received, exiting.\n");
-                  close(new_listening_socket);
-                  fclose(fp);
-                  exit(1);
-              }
-              else if (op_code == OPCODE_DATA)
-              {
-                  set_opcode(packet, OPCODE_ACK);
-                  set_block_num(packet, block_num);
-                  char payload[new_msg_len-HEADER_SIZE];
+                  unsigned short op_code;
+                  unsigned short block;
                   
-                  // Source, size per element in bytes, # of elements, filestream
-                  memcpy(payload, buffer+HEADER_SIZE, sizeof(payload));
-                  fwrite(payload, 1, sizeof(payload), fp);
-                  sendto(new_listening_socket, packet, sizeof(packet), 0, &client, sizeof(client));
-                  block_num++;
-              }
-              
-              
-              // Last packet received, child process should exit
-              if (new_msg_len < MAX_PAYLOAD_LENGTH)
-              {
-                  close(fp);
+                  bzero(buffer, BUFFER_LENGTH);                         // Set all contents of the buffer to contain 0s
                   
-                  // Transfer contents of temp file into correct file
-                  // Do this by looping through the temp file and copying into destination file
-                  complete_write(file, temp_filename);
-                  close(new_listening_socket);
-                  exit(1);
+                  new_msg_len = recvfrom(new_listening_socket,buffer,BUFFER_LENGTH,0,(struct sockaddr *)&client,(socklen_t *)&fromlen);
+                  
+                  if (new_msg_len < 0)
+                  {
+                      continue;
+                  }
+                  
+                  op_code = ntohs(*(unsigned short int*)&buffer);
+                  
+                  block = buffer[2] << 8 | buffer[3];
+                  
+                  if (op_code == OPCODE_ERROR)
+                  {
+                      fprintf(stderr,"Error received, exiting.\n");
+                      close(new_listening_socket);
+                      fclose(fp);
+                      exit(1);
+                  }
+                  else if (op_code == OPCODE_ACK && !sent_last_packet)
+                  {
+                      // we are receiving the proper ack packet, proceed transmitting data normally
+                      if (block == block_num)
+                      {
+                          retransmit_attempts = 0;
+                          if (file_size-offset*payload_length < payload_length)
+                          {
+                              payload_length = file_size-offset*payload_length;
+                              
+                          }
+                          char data_packet[4+payload_length];               // Only create a data packet as large as needed to contain the remaining file data
+                          set_opcode(data_packet, OPCODE_DATA);
+                          set_block_num(data_packet, block_num);
+                          
+                          memcpy(data_packet+4, file_contents_buffer+offset*MAX_PAYLOAD_LENGTH, payload_length);
+                          sendto(new_listening_socket, data_packet, sizeof(data_packet), 0, &client, sizeof(client));
+                          block_num++;
+                          offset++;
+                      }
+                      
+                      // a packet was lost somewhere, retransmit last packet
+                      else if ((block != block_num) && (retransmit_attempts < 5))
+                      {
+                          offset--;
+                          if (file_size-offset*payload_length < payload_length)
+                          {
+                              payload_length = file_size-offset*payload_length;
+                          }
+                          char data_packet[4+payload_length];               // Only create a data packet as large as needed to contain the remaining file data
+                          set_opcode(data_packet, OPCODE_DATA);
+                          set_block_num(data_packet, block_num);
+                          
+                          memcpy(data_packet+4, file_contents_buffer+offset*MAX_PAYLOAD_LENGTH, payload_length);
+                          sendto(new_listening_socket, data_packet, sizeof(data_packet), 0, &client, sizeof(client));
+                          offset++;
+                          retransmit_attempts++;
+                      }
+                      
+                      // we have retransmitted the same packet 5 times, timeout
+                      else
+                      {
+                          fprintf(stderr,"Timeout, exiting.\n");
+                          close(new_listening_socket);
+                          fclose(fp);
+                          exit(1);
+                      }
+                      
+                  }
+              }
+ 
+          }
+          else if (opcode == OPCODE_WRITE)
+          {
+              strcpy(temp_filename, "temp");                // add temp directory to empty string
+              strcat(temp_filename, file);                  // concatenate temp directory with unique filename
+              
+              
+              
+              // This is a temporary file for writing to while receiving packets, so as to
+              // only display the final file when all data has been written
+              fp = fopen(temp_filename, "wb");
+              
+              char packet[MAX_PAYLOAD_LENGTH];
+              set_opcode(packet, OPCODE_ACK);
+              set_block_num(packet, block_num);
+              
+              // We've already confirmed we just received a WRQ and that the file doesn't exist already
+              // Send an ACK packet
+              // sendto without binding first will bind to random port, allowing for concurrency
+              sendto(new_listening_socket, packet, sizeof(packet), 0, &client, sizeof(client));
+              
+              // Verify that the new port does not equal the main server port
+              assert(client.sin_port != listening_port);
+              
+              block_num++;
+              
+              // Keep receiving requests while keeping track of block number
+              int new_msg_len;
+              while(1)
+              {
+                  unsigned short op_code;
+                  unsigned short block;
+                  
+                  bzero(buffer, BUFFER_LENGTH);                         // Set all contents of the buffer to contain 0s
+                  
+                  new_msg_len = recvfrom(new_listening_socket,buffer,BUFFER_LENGTH,0,(struct sockaddr *)&client,(socklen_t *)&fromlen);
+                  
+                  if (new_msg_len < 0)
+                  {
+                      continue;
+                  }
+                  
+                  op_code = ntohs(*(unsigned short int*)&buffer);
+                  
+                  block = buffer[2] << 8 | buffer[3];                   // Concatenate upper and lower halves of the block into one short
+                  
+                  if (op_code == OPCODE_ERROR)
+                  {
+                      fprintf(stderr,"Error received, exiting.\n");
+                      close(new_listening_socket);
+                      fclose(fp);
+                      exit(1);
+                  }
+                  else if (op_code == OPCODE_DATA)
+                  {
+                      set_opcode(packet, OPCODE_ACK);
+                      set_block_num(packet, block_num);
+                      char payload[new_msg_len-HEADER_SIZE];
+                      
+                      // Source, size per element in bytes, # of elements, filestream
+                      memcpy(payload, buffer+HEADER_SIZE, sizeof(payload));
+                      fwrite(payload, 1, sizeof(payload), fp);
+                      sendto(new_listening_socket, packet, sizeof(packet), 0, &client, sizeof(client));
+                      block_num++;
+                  }
+                  
+                  // Last packet received, child process should exit
+                  if (new_msg_len < MAX_PAYLOAD_LENGTH)
+                  {
+                      close(fp);
+                      
+                      // Transfer contents of temp file into correct file
+                      // Do this by looping through the temp file and copying into destination file
+                      complete_write(file, temp_filename);
+                      close(new_listening_socket);
+                      exit(1);
+                  }
+                  
               }
               
           }
-          
       }
       
   }
