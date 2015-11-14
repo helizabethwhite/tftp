@@ -2,11 +2,12 @@
  * created by helizabethwhite, 2015
  *
  * This file implements a simple TFTP server that runs on a specified port.
- * The server only processes WRQ (write request) packets, and ignores all others
- * aside from ERROR.
+ * The server processes both WRQ (write request) packets and RRQ (read request)
+ * packets, and terminates when receiving an ERROR packet.
  *
- * TO DO: Add timeouts on server end, block number exceeds the amount that 2 bytes can hold, and perhaps 
- * create instance of server for better unit testing?
+ * TO DO: Add timeouts on server end, account for instances where the block number exceeds 
+ * the integer amount that 2 bytes can hold, condense/organize some of the processing code
+ * (such as packet creation) into methods, and perhaps create an instance of server for better unit testing?
  *
  */
 
@@ -79,6 +80,15 @@ void complete_write(char* dest, char* src)
 // filename taken from WRQ packets
 char * filename;
 
+
+/*
+ * The following code creates a main port for the server
+ * to use in processing initial requests before forking and
+ * binding to a new, randomized (but available) port. Once
+ * binded to said new port, the child process handles the
+ * transfer of data between the server/client so as to 
+ * provide concurrency.
+ */
 int main(int argc, char *argv[]){
     
     int main_listening_socket, new_listening_socket;
