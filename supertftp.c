@@ -2,12 +2,11 @@
  * created by helizabethwhite, 2015
  *
  * This file implements a simple TFTP server that runs on a specified port.
- * The server processes both WRQ (write request) packets and RRQ (read request)
- * packets, and terminates when receiving an ERROR packet.
+ * The server only processes WRQ (write request) packets, and ignores all others
+ * aside from ERROR.
  *
- * TO DO: Add timeouts on server end, account for instances where the block number exceeds 
- * the integer amount that 2 bytes can hold, condense/organize some of the processing code
- * (such as packet creation) into methods, and perhaps create an instance of server for better unit testing?
+ * TO DO: Add timeouts on server end, block number exceeds the amount that 2 bytes can hold, and perhaps 
+ * create instance of server for better unit testing?
  *
  */
 
@@ -80,15 +79,6 @@ void complete_write(char* dest, char* src)
 // filename taken from WRQ packets
 char * filename;
 
-
-/*
- * The following code creates a main port for the server
- * to use in processing initial requests before forking and
- * binding to a new, randomized (but available) port. Once
- * binded to said new port, the child process handles the
- * transfer of data between the server/client so as to 
- * provide concurrency.
- */
 int main(int argc, char *argv[]){
     
     int main_listening_socket, new_listening_socket;
@@ -235,6 +225,7 @@ int main(int argc, char *argv[]){
               }
               
               char packet[4+payload_length];            // 516 bytes (4 bytes for opcode and blocknum + payload) is
+              bzero(packet, 4+payload_length);
               set_opcode(packet, OPCODE_DATA);          // default for data packets, but our file size might be small enough for less
               set_block_num(packet, block_num);
               
@@ -242,6 +233,8 @@ int main(int argc, char *argv[]){
               memcpy(packet+4, file_contents_buffer, payload_length); // Create our first packet of data
               
               sendto(new_listening_socket, packet, sizeof(packet), 0, &client, sizeof(client));     // Send our first data packet
+              
+              block_num++;
               
               // Verify that the new port does not equal the main server port
               assert(client.sin_port != listening_port);
@@ -276,11 +269,13 @@ int main(int argc, char *argv[]){
                       fclose(fp);
                       exit(1);
                   }
-                  else if (op_code == OPCODE_ACK && !sent_last_packet)
+                  else if (op_code == OPCODE_ACK)
                   {
+                      
                       // we are receiving the proper ack packet, proceed transmitting data normally
-                      if (block == block_num)
+                      if (block == block_num && !sent_last_packet)
                       {
+                          block_num++;
                           retransmit_attempts = 0;
                           if (file_size-offset*payload_length < payload_length)
                           {
@@ -293,7 +288,12 @@ int main(int argc, char *argv[]){
                           
                           memcpy(data_packet+4, file_contents_buffer+offset*MAX_PAYLOAD_LENGTH, payload_length);
                           sendto(new_listening_socket, data_packet, sizeof(data_packet), 0, &client, sizeof(client));
-                          block_num++;
+            
+                          // We have sent our last packet
+                          if (sizeof(data_packet) < 516)
+                          {
+                              sent_last_packet = 1;
+                          }
                           offset++;
                       }
                       
@@ -315,14 +315,15 @@ int main(int argc, char *argv[]){
                           retransmit_attempts++;
                       }
                       
-                      // we have retransmitted the same packet 5 times, timeout
+                      // We've transmitted the same packet 5 times and are timing out, or we've sent our last packet
                       else
                       {
-                          fprintf(stderr,"Timeout, exiting.\n");
+                          fprintf(stderr,"Exiting.\n");
                           close(new_listening_socket);
                           fclose(fp);
                           exit(1);
                       }
+                     
                       
                   }
               }
