@@ -234,8 +234,6 @@ int main(int argc, char *argv[]){
               
               sendto(new_listening_socket, packet, sizeof(packet), 0, &client, sizeof(client));     // Send our first data packet
               
-              block_num++;
-              
               // Verify that the new port does not equal the main server port
               assert(client.sin_port != listening_port);
               
@@ -275,8 +273,8 @@ int main(int argc, char *argv[]){
                       // we are receiving the proper ack packet, proceed transmitting data normally
                       if (block == block_num && !sent_last_packet)
                       {
-                          block_num++;
                           retransmit_attempts = 0;
+                          block_num++;
                           if (file_size-offset*payload_length < payload_length)
                           {
                               payload_length = file_size-offset*payload_length;
@@ -295,6 +293,7 @@ int main(int argc, char *argv[]){
                               sent_last_packet = 1;
                           }
                           offset++;
+                          
                       }
                       
                       // a packet was lost somewhere, retransmit last packet
