@@ -19,6 +19,7 @@
 #include <sys/stat.h>
 #include <netinet/in.h>
 #include <assert.h>
+#include <pthread.h>
 
 #define OPCODE_READ             1
 #define OPCODE_WRITE            2
@@ -31,6 +32,8 @@
 
 
 void *handle_connection(void *);
+pthread_mutex_t result_file_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t temp_file_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 struct connection_info
 {
@@ -66,6 +69,7 @@ void set_block_num(char *packet, int block)
  */
 void complete_write(char* dest, char* src)
 {
+    pthread_mutex_lock(&result_file_mutex);
     FILE* result = fopen(dest, "wb");
     
     FILE* temp = fopen(src, "r");
@@ -84,6 +88,7 @@ void complete_write(char* dest, char* src)
     fclose(result);
     fclose(temp);
     rename(src, dest);
+    pthread_mutex_unlock(&result_file_mutex);
 }
 
 // filename taken from WRQ packets
@@ -216,11 +221,11 @@ void* handle_connection(void* client_connection_info)
     {
         block_num++;                              // In contrast to WRQ, block number begins at 1 and not 0
         
-        fp = fopen(filename, "rb");               // open file for reading
-            
         char *file_contents_buffer;               // Buffer used to store contents of file
         size_t file_size;                         // Size of the file
-            
+        
+        // don't need a mutex when reading from files
+        fp = fopen(filename, "rb");               // open file for reading
         fseek(fp, 0, SEEK_END);
         file_size = ftell(fp);                                            // get the size of the file
         rewind(fp);                                                       // set our filestream back to the top of the file instead of the bottom
@@ -323,7 +328,7 @@ void* handle_connection(void* client_connection_info)
                 // We've transmitted the same packet 5 times and are timing out, or we've sent our last packet
                 else
                 {
-                    fprintf(stderr,"Exiting.\n");
+                    fprintf(stderr,"Thread %d exiting.\n", pthread_self());
                     close(new_listening_socket);
                     fclose(fp);
                     dont_exit = 0;
@@ -345,6 +350,7 @@ void* handle_connection(void* client_connection_info)
         
         // This is a temporary file for writing to while receiving packets, so as to
         // only display the final file when all data has been written
+        pthread_mutex_lock(&temp_file_mutex);           // Lock the temp file from any other thread
         fp = fopen(temp_filename, "wb");
         
         char packet[MAX_PAYLOAD_LENGTH];
@@ -384,6 +390,7 @@ void* handle_connection(void* client_connection_info)
                 fprintf(stderr,"Error received, exiting.\n");
                 close(new_listening_socket);
                 fclose(fp);
+                pthread_mutex_unlock(&temp_file_mutex);
                 dont_exit = 0;
             }
             else if (op_code == OPCODE_DATA)
@@ -403,6 +410,7 @@ void* handle_connection(void* client_connection_info)
             if (new_msg_len < MAX_PAYLOAD_LENGTH)
             {
                 close(fp);
+                pthread_mutex_unlock(&temp_file_mutex);
                 // Transfer contents of temp file into correct file
                 // Do this by looping through the temp file and copying into destination file
                 complete_write(filename, temp_filename);
