@@ -232,24 +232,24 @@ void* handle_connection(void* client_connection_info)
         file_contents_buffer = malloc(file_size * (sizeof(char)));        // allocate buffer size to hold contents of file
         fread(file_contents_buffer, sizeof(char), file_size, fp);         // read the contents of the file into the buffer
         fclose(fp);
+        
+        int payload_length = MAX_PAYLOAD_LENGTH;
+        if (file_size < MAX_PAYLOAD_LENGTH)       // Always check the size of the file in case the file is small enough to transfer just one packet with reduced size
+        {
+            payload_length = file_size;
+        }
+        
+        char packet[4+payload_length];            // 516 bytes (4 bytes for opcode and blocknum + payload) is the
+        bzero(packet, 4+payload_length);
+        set_opcode(packet, OPCODE_DATA);          // default for data packets, but our file size might be small enough forless
+        set_block_num(packet, block_num);
+        
+        
+        memcpy(packet+4, file_contents_buffer, payload_length); // Create our first packet of data
+        
+        sendto(new_listening_socket, packet, sizeof(packet), 0, &client, sizeof(client));     // Send our first data packet
             
-            int payload_length = MAX_PAYLOAD_LENGTH;
-            if (file_size < MAX_PAYLOAD_LENGTH)       // Always check the size of the file in case the file is small enough to transfer just one packet with reduced size
-            {
-                payload_length = file_size;
-            }
-            
-            char packet[4+payload_length];            // 516 bytes (4 bytes for opcode and blocknum + payload) is the
-            bzero(packet, 4+payload_length);
-            set_opcode(packet, OPCODE_DATA);          // default for data packets, but our file size might be small enough for less
-            set_block_num(packet, block_num);
-            
-            
-            memcpy(packet+4, file_contents_buffer, payload_length); // Create our first packet of data
-            
-            sendto(new_listening_socket, packet, sizeof(packet), 0, &client, sizeof(client));     // Send our first data packet
-            
-            // Keep receiving requests while keeping track of block number
+        // Keep receiving requests while keeping track of block number
         int new_msg_len;
         int offset = 1;
         int retransmit_attempts = 0;
@@ -281,7 +281,6 @@ void* handle_connection(void* client_connection_info)
             }
             else if (op_code == OPCODE_ACK)
             {
-                    
                 // we are receiving the proper ack packet, proceed transmitting data normally
                 if (block == block_num && !sent_last_packet)
                 {
