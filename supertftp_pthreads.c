@@ -420,4 +420,6 @@ void* handle_connection(void* client_connection_info)
         }
     }
     
+    return 0;
+    
 }
